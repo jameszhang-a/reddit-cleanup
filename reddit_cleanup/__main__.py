@@ -1,8 +1,10 @@
 import praw
 from prawcore import ResponseException, OAuthException
-from PyInquirer import prompt, print_json, Separator, style_from_dict
-from validator import NumberValidator
+from PyInquirer import prompt, Separator
+from validator import NumberValidator, MinimumChoice
 from datetime import datetime
+
+LIMIT = 100
 
 
 def ask_type():
@@ -24,7 +26,7 @@ def ask_karma():
     question = {
         "type": "input",
         "name": "karma",
-        "message": "Comments below how many upvotes would you like to delete",
+        "message": "Comments below how many upvotes would you like to delete: ",
         "validate": NumberValidator,
         "filter": lambda val: int(val),
     }
@@ -33,7 +35,7 @@ def ask_karma():
     return karma["karma"]
 
 
-def ask_delete():
+def ask_delete(total_comments):
     q = [
         {
             "type": "list",
@@ -44,10 +46,20 @@ def ask_delete():
         {
             "type": "input",
             "name": "display_limit",
+            "message": f"How many would you like to preview? (limit: {total_comments})",
+            "validate": NumberValidator,
+            "filter": lambda val: int(val),
+            "when": lambda answers: answers["mode"] == "Preview"
+            and total_comments < 1000,
+        },
+        {
+            "type": "input",
+            "name": "display_limit",
             "message": "How many would you like to preview? (limit: 1000)",
             "validate": NumberValidator,
             "filter": lambda val: int(val),
-            "when": lambda answers: answers["mode"] == "Preview",
+            "when": lambda answers: answers["mode"] == "Preview"
+            and total_comments >= 1000,
         },
     ]
 
@@ -55,15 +67,23 @@ def ask_delete():
     return answers
 
 
-def fcomment(comment):
-    upvotes, body, time, sub = (
+def cbody(comment):
+    return f"{comment.body}\n"
+
+
+def cinfo(comment):
+    upvotes, time, sub = (
         comment.score,
-        comment.body,
         datetime.fromtimestamp(comment.created_utc),
         comment.subreddit,
     )
 
-    return f"upvotes: {upvotes} \t created: {time} \t subreddit: {sub}\n{body}\n"
+    return f"upvotes: {upvotes}    created: {time}    subreddit: {sub}"
+
+
+def delete_comments(comments):
+    for comment in comments:
+        comment.delete()
 
 
 def select_delete(choices):
@@ -73,60 +93,82 @@ def select_delete(choices):
         "message": "select comments",
         "name": "comments",
         "choices": choices,
+        "validate": MinimumChoice,
     }
 
-    answers = prompt(q)
-    print(answers)
+    return prompt(q)["comments"]
+
+
+def rerun():
+    q = {
+        "type": "confirm",
+        "name": "restart",
+        "message": "There are no comments that match. Restart?",
+    }
+    return prompt(q)["restart"]
 
 
 def main():
-    try:
-        reddit = praw.Reddit("bot1")
-        me = reddit.user.me().comments.new(limit=3)
-    except ResponseException:
-        print("Your reddit app ID/secret is likely wrong")
-        print("exiting...")
-        return
-    except OAuthException:
-        print("Your reddit username and password is likely wrong")
-        print("exiting...")
-        return
+    while True:
+        try:
+            reddit = praw.Reddit("bot1")
+            me = reddit.user.me().comments.new(limit=LIMIT)
+            total_comments = sum(1 for _ in reddit.user.me().comments.new(limit=LIMIT))
+        except ResponseException:
+            print("Your reddit app ID/secret is likely wrong")
+            print("exiting...")
+            return
+        except OAuthException:
+            print("Your reddit username and password is likely wrong")
+            print("exiting...")
+            return
 
-    # print(sum(1 for _ in me))
+        # whether all of reddit or for specific subs
+        type = ask_type()
+        if type == "General":
+            threshold = ask_karma()
+            delete_mode = ask_delete(total_comments)
 
-    # whether all of reddit or for specific subs
-    type = ask_type()
-    if type == "General":
-        threshold = ask_karma()
-        delete_mode = ask_delete()
-        print(delete_mode)
-
-        mode = delete_mode["mode"]
-
-        if mode == "NUKE":
-            for i, cid in enumerate(me):
-                cid = str(cid)
-                comment = reddit.comment(id=cid)
-
-                if (comment.score) < threshold:
-                    print(fcomment(comment))
-                    # comment.delete()
-
-        elif mode == "Preview":
-            n = delete_mode["display_limit"]
-            choices = []
-            for i, cid in enumerate(me):
-                if i < n:
+            if delete_mode["mode"] == "NUKE":
+                for i, cid in enumerate(me):
+                    # Finds the reddit comment object associated with comments you posted
                     cid = str(cid)
                     comment = reddit.comment(id=cid)
 
                     if (comment.score) < threshold:
-                        choices.append({"name": fcomment(comment), "value": comment})
+                        print(fcomment(comment))
+                        # comment.delete()
 
-            select_delete(choices)
+                break
 
-    elif type == "Subreddits":
-        print("Sub")
+            elif delete_mode["mode"] == "Preview":
+                n = delete_mode["display_limit"]
+                choices = []
+                for i, cid in enumerate(me):
+                    # Only searches through the selected limit
+                    if len(choices) / 2 < n:
+                        # Finds the reddit comment object associated with comments you posted
+                        cid = str(cid)
+                        comment = reddit.comment(id=cid)
+
+                        # only comments below a certain up vote threshold is selected
+                        if (comment.score) < threshold:
+                            choices.append(Separator(cinfo(comment)))
+                            choices.append({"name": cbody(comment), "value": comment})
+
+                # if no comments match the query, restart script or exit
+                if len(choices) < 1:
+                    if rerun():
+                        continue
+                    else:
+                        break
+
+                comments_to_delete = select_delete(choices)
+                delete_comments(comments_to_delete)
+                break
+
+        elif type == "Subreddits":
+            print("Sub")
 
 
 if __name__ == "__main__":

@@ -14,3 +14,9 @@ class NumberValidator(Validator):
             raise ValidationError(
                 message="Please enter a number", cursor_position=len(document.text)
             )  # Move cursor to end
+
+
+class MinimumChoice(Validator):
+    def validate(self, document):
+        if len(document.text) < 1:
+            raise ValidationError(message="There are no selections")
