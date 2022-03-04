@@ -1,0 +1,7 @@
+# this will contain your secrets
+praw.ini
+
+# don't want custom settings to be shared
+.vscode/
+
+__pycache__/

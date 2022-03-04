@@ -1,0 +1,18 @@
+[tool.poetry]
+name = "reddit-cleanup"
+version = "0.1.0"
+description = ""
+authors = ["James Zhang <jameszhanga@gmail.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+praw = "^7.5.0"
+PyInquirer = "^1.0.3"
+
+[tool.poetry.dev-dependencies]
+pytest = "^5.2"
+black = {version = "^22.1.0", allow-prereleases = true}
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
