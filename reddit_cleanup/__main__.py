@@ -1,10 +1,11 @@
+from email.policy import default
 import praw
 from prawcore import ResponseException, OAuthException
 from PyInquirer import prompt, Separator
 from validator import NumberValidator, MinimumChoice
 from datetime import datetime
 
-LIMIT = 100
+LIMIT = 500
 
 
 def ask_type():
@@ -82,8 +83,19 @@ def cinfo(comment):
 
 
 def delete_comments(comments):
-    for comment in comments:
-        comment.delete()
+    n = len(comments)
+
+    q = {
+        "type": "confirm",
+        "name": "delete",
+        "message": f"{n} comments found, delete?",
+        "default": False,
+    }
+    delete = prompt(q)["delete"]
+
+    if delete:
+        for comment in comments:
+            comment.delete()
 
 
 def select_delete(choices):
@@ -130,26 +142,26 @@ def main():
             delete_mode = ask_delete(total_comments)
 
             if delete_mode["mode"] == "NUKE":
-                for i, cid in enumerate(me):
+                comments_to_delete = []
+                for cid in me:
                     # Finds the reddit comment object associated with comments you posted
-                    cid = str(cid)
-                    comment = reddit.comment(id=cid)
+                    comment = reddit.comment(id=str(cid))
 
+                    # only comments below a certain up vote threshold is selected
                     if (comment.score) < threshold:
-                        print(fcomment(comment))
-                        # comment.delete()
+                        comments_to_delete.append(comment)
 
+                delete_comments(comments_to_delete)
                 break
 
             elif delete_mode["mode"] == "Preview":
                 n = delete_mode["display_limit"]
                 choices = []
-                for i, cid in enumerate(me):
+                for cid in me:
                     # Only searches through the selected limit
                     if len(choices) / 2 < n:
                         # Finds the reddit comment object associated with comments you posted
-                        cid = str(cid)
-                        comment = reddit.comment(id=cid)
+                        comment = reddit.comment(id=str(cid))
 
                         # only comments below a certain up vote threshold is selected
                         if (comment.score) < threshold:
@@ -173,17 +185,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-"""
-Flow:
-ask general or specific
-
-general:
-    ask nuke or show comments
-    
-    nuke:
-        nuke
-        
-    show:
-        show how many
-"""
